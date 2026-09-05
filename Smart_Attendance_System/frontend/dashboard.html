@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Smart Attendance | Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css?v=20260904-2">
+</head>
+<body class="dashboard">
+    <aside class="sidebar">
+        <header class="sidebar-header">
+            <div class="sidebar-logo" aria-hidden="true">SA</div>
+            <h2>Smart Attendance</h2>
+            <p id="sidebar-role-label">Operations console</p>
+            <p id="sidebar-user-label" class="sidebar-user-label">Logged in</p>
+        </header>
+        <nav class="sidebar-nav" aria-label="Primary navigation" id="sidebar-nav"></nav>
+        <footer class="sidebar-footer"><button id="logout" class="btn-logout" type="button">Logout</button></footer>
+    </aside>
+
+    <main class="main-content">
+        <section id="overview-page" class="page-section active">
+            <header class="page-header"><p class="eyebrow">Today, <span id="today-label"></span></p><h1>Attendance overview</h1><p>See the room at a glance and keep the register moving.</p></header>
+            <div id="stats" class="stats-grid">
+                <article class="stat-card blue"><div class="stat-card-top"><span class="stat-icon">#</span><strong class="stat-value" data-stat="total_students">--</strong></div><span class="stat-label">Total students</span></article>
+                <article class="stat-card green"><div class="stat-card-top"><span class="stat-icon">+</span><strong class="stat-value" data-stat="present_today">--</strong></div><span class="stat-label">Present today</span></article>
+                <article class="stat-card red"><div class="stat-card-top"><span class="stat-icon">-</span><strong class="stat-value" data-stat="absent_today">--</strong></div><span class="stat-label">Absent today</span></article>
+                <article class="stat-card purple"><div class="stat-card-top"><span class="stat-icon">/</span><strong class="stat-value" data-stat="departments">--</strong></div><span class="stat-label">Departments</span></article>
+            </div>
+            <section class="table-container">
+                <header class="table-header"><div><h3>Today's attendance</h3><p class="table-subtitle">Every mark, including its captured moment.</p></div><div class="table-actions"><button id="refresh" class="btn btn-secondary" type="button">Refresh</button><a class="btn btn-primary" href="/api/reports/daily">Export Excel</a></div></header>
+                <div class="table-scroll"><table class="data-table"><thead><tr><th>Student ID</th><th>Name</th><th>Department</th><th>Time in</th><th>Time out</th><th>Status</th><th>Photo</th></tr></thead><tbody id="attendance-rows"></tbody></table></div>
+            </section>
+        </section>
+
+        <section id="attendance-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Live capture</p><h1>Take attendance</h1><p>Marking automatically captures the camera frame and checks the student voice.</p></header>
+            <div id="react-attendance-root" class="attendance-layout"></div>
+        </section>
+
+        <section id="register-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Directory setup</p><h1>Register student</h1><p>Create a student record and capture face samples for model training.</p></header>
+            <div class="workflow-grid">
+                <section class="action-panel"><div class="panel-heading"><span class="section-kicker">Student record</span><h2>Student information</h2></div><form id="register-form" class="stack-form"><label>Student ID<input id="register-id" required placeholder="BU240501"></label><label>Full name<input id="register-name" required></label><label>Department<input id="register-department" required></label><label>Course<input id="register-course"></label><label>Year<input id="register-year" type="number" min="1" value="1"></label><label>Email<input id="register-email" type="email"></label><label>Phone<input id="register-phone"></label><button class="btn btn-primary" type="submit">Save student</button><p id="register-message" class="form-message" role="status"></p></form></section>
+                <section class="camera-panel"><div class="panel-heading"><span class="section-kicker">Training data</span><h2>Automatic face capture <small>maximum 30</small></h2></div><div id="react-registration-root"></div></section>
+            </div>
+        </section>
+
+        <section id="staff-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Staff directory</p><h1>Register staff</h1><p>Create a teacher or staff profile for the attendance system.</p></header>
+            <div class="profile-layout staff-register-layout">
+                <section class="action-panel">
+                    <div class="panel-heading"><span class="section-kicker">Staff record</span><h2>Staff information</h2></div>
+                    <form id="staff-register-form" class="stack-form">
+                        <label>Staff ID<input id="staff-register-id" required placeholder="TCH-001"></label>
+                        <label>Full name<input id="staff-register-name" required placeholder="Staff name"></label>
+                        <label>Department<input id="staff-register-department" required placeholder="Computer Science"></label>
+                        <label>Designation<input id="staff-register-designation" value="Teacher" placeholder="Teacher"></label>
+                        <label>Email<input id="staff-register-email" type="email" placeholder="staff@example.com"></label>
+                        <label>Phone<input id="staff-register-phone" placeholder="+94 77 123 4567"></label>
+                        <button class="btn btn-primary" type="submit">Save staff profile</button>
+                        <p id="staff-register-message" class="form-message" role="status"></p>
+                    </form>
+                </section>
+                <section class="action-panel staff-register-note">
+                    <div class="panel-heading"><span class="section-kicker">Access profile</span><h2>Attendance role</h2></div>
+                    <p>Staff profiles can manage attendance and view the student directory according to the account role assigned at login.</p>
+                </section>
+            </div>
+        </section>
+
+        <section id="voice-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Audio recognition</p><h1>Voice attendance</h1><p>Use the server microphone to recognize a trained speaker and mark attendance.</p></header>
+            <div class="workflow-grid two-panels"><section class="action-panel"><div class="panel-heading"><span class="section-kicker">Attendance</span><h2>Recognize speaker</h2></div><button id="voice-recognize" class="btn btn-accent" type="button">Start voice recognition</button><p id="voice-recognition-message" class="form-message" role="status"></p></section><section class="action-panel"><div class="panel-heading"><span class="section-kicker">Enrollment</span><h2>Register voice</h2></div><label for="voice-student">Student ID</label><input id="voice-student" list="student-options" placeholder="Student ID"><label for="voice-count">Samples</label><input id="voice-count" type="number" min="1" max="10" value="5"><button id="voice-register" class="btn btn-primary" type="button">Record voice samples</button><p id="voice-register-message" class="form-message" role="status"></p></section></div>
+        </section>
+
+        <section id="reports-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Exports</p><h1>Reports</h1><p>Generate Excel reports for daily, date-range, or individual attendance.</p></header>
+            <div class="workflow-grid report-grid"><section class="action-panel"><div class="panel-heading"><span class="section-kicker">Daily</span><h2>Daily report</h2></div><label>Date<input id="report-date" type="date"></label><button id="daily-report" class="btn btn-primary" type="button">Download Excel</button></section><section class="action-panel"><div class="panel-heading"><span class="section-kicker">Range</span><h2>Date range</h2></div><label>Start<input id="report-start" type="date"></label><label>End<input id="report-end" type="date"></label><label>Department<input id="report-department" placeholder="Optional"></label><button id="range-report" class="btn btn-primary" type="button">Download Excel</button></section><section class="action-panel"><div class="panel-heading"><span class="section-kicker">Student</span><h2>Student report</h2></div><label>Student ID<input id="report-student" list="student-options" placeholder="Student ID"></label><button id="student-report" class="btn btn-primary" type="button">Download Excel</button></section></div>
+        </section>
+
+        <section id="students-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Directory</p><h1>Students</h1><p>Search the register and remove outdated records.</p></header>
+            <section class="table-container"><header class="table-header"><h3>Student directory</h3><div class="table-actions"><input id="student-search" class="search-input" placeholder="Search name, ID, department" type="search"><button id="student-refresh" class="btn btn-secondary" type="button">Refresh</button></div></header><div class="table-scroll"><table class="data-table"><thead><tr><th>Student ID</th><th>Name</th><th>Department</th><th>Course</th><th>Face</th><th>Voice</th><th></th></tr></thead><tbody id="student-rows"></tbody></table></div></section>
+        </section>
+
+        <section id="departments-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Directory</p><h1>Departments</h1><p>See every department represented in the student register.</p></header>
+            <section class="table-container"><header class="table-header"><div><h3>Department directory</h3><p class="table-subtitle">Grouped from the current student records.</p></div><button id="department-refresh" class="btn btn-secondary" type="button">Refresh</button></header><div class="table-scroll"><table class="data-table"><thead><tr><th>Department</th><th>Students</th><th>Face ready</th><th>Voice ready</th></tr></thead><tbody id="department-rows"></tbody></table></div></section>
+        </section>
+
+        <section id="training-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Recognition models</p><h1>Train models</h1><p>Build models from the face and voice samples in the dataset.</p></header>
+            <div class="workflow-grid two-panels"><section class="action-panel model-card"><div class="panel-heading"><span class="section-kicker">Face model</span><h2>Face recognition</h2></div><p id="face-model-status" class="model-status">Checking status...</p><button id="train-face" class="btn btn-primary" type="button">Train face model</button><p id="face-training-message" class="form-message" role="status"></p></section><section class="action-panel model-card"><div class="panel-heading"><span class="section-kicker">Voice model</span><h2>Voice recognition</h2></div><p id="voice-model-status" class="model-status">Checking status...</p><button id="train-voice" class="btn btn-primary" type="button">Train voice model</button><p id="voice-training-message" class="form-message" role="status"></p></section></div>
+        </section>
+
+        <section id="settings-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">System preferences</p><h1>Settings</h1><p>Review the rules and services that keep attendance running.</p></header>
+            <div class="settings-grid">
+                <section class="action-panel settings-panel">
+                    <div class="panel-heading"><span class="section-kicker">Attendance</span><h2>Daily operation</h2></div>
+                    <div class="settings-list">
+                        <div class="setting-row"><div><strong>Attendance cooldown</strong><span>Time before the same student can be marked again.</span></div><b>30 seconds</b></div>
+                        <div class="setting-row"><div><strong>Working hours</strong><span>Attendance window used by the register.</span></div><b>08:00 - 18:00</b></div>
+                        <div class="setting-row"><div><strong>Camera processing</strong><span>Frames skipped between recognition checks.</span></div><b>Every 2nd frame</b></div>
+                    </div>
+                </section>
+                <section class="action-panel settings-panel">
+                    <div class="panel-heading"><span class="section-kicker">Recognition</span><h2>Matching rules</h2></div>
+                    <div class="settings-list">
+                        <div class="setting-row"><div><strong>Face detector</strong><span>CPU-friendly detector used during attendance.</span></div><b>HOG</b></div>
+                        <div class="setting-row"><div><strong>Match tolerance</strong><span>Lower values require a closer face match.</span></div><b>0.50</b></div>
+                        <div class="setting-row"><div><strong>Required face samples</strong><span>Minimum accepted samples per student.</span></div><b>5 images</b></div>
+                    </div>
+                </section>
+                <section class="action-panel settings-panel settings-status-panel">
+                    <div class="panel-heading"><span class="section-kicker">System</span><h2>Service status</h2></div>
+                    <div class="settings-list">
+                        <div class="setting-row"><div><strong>Attendance database</strong><span>Student and attendance records.</span></div><b class="status-value"><i></i>Connected</b></div>
+                        <div class="setting-row"><div><strong>Face model</strong><span>Recognition model built from captured samples.</span></div><a class="settings-link" href="#" data-page-link="training">Manage</a></div>
+                        <div class="setting-row"><div><strong>Dashboard data</strong><span>Live counts and today's attendance marks.</span></div><a class="settings-link" href="#" data-page-link="overview">View overview</a></div>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        <section id="profile-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Profile</p><h1 id="profile-page-title">My profile</h1><p id="profile-page-description">Manage your teacher account details and contact information.</p></header>
+            <div id="staff-profile-layout" class="profile-layout">
+                <section class="action-panel">
+                    <div class="panel-heading"><span class="section-kicker">Teacher</span><h2>Profile details</h2></div>
+                    <div id="staff-profile-card" class="profile-card">Loading profile...</div>
+                </section>
+                <section class="action-panel">
+                    <div class="panel-heading"><span class="section-kicker">Register</span><h2>Teacher profile</h2></div>
+                    <form id="staff-profile-form" class="stack-form" method="post">
+                        <label>Teacher ID<input id="staff-id" required placeholder="TCH-001"></label>
+                        <label>Full name<input id="staff-name" required placeholder="Teacher name"></label>
+                        <label>Department<input id="staff-department" required placeholder="Computer Science"></label>
+                        <label>Email<input id="staff-email" type="email" placeholder="teacher@example.com"></label>
+                        <label>Phone<input id="staff-phone" placeholder="+94 77 123 4567"></label>
+                        <button class="btn btn-primary" type="submit">Save profile</button>
+                        <p id="staff-profile-message" class="form-message" role="status"></p>
+                    </form>
+                </section>
+            </div>
+            <div id="student-profile-layout" class="profile-layout" hidden>
+                <section class="action-panel">
+                    <div class="panel-heading"><span class="section-kicker">Student</span><h2>Registered details</h2></div>
+                    <div id="student-profile-card" class="profile-card">Loading profile...</div>
+                </section>
+                <section class="action-panel">
+                    <div class="panel-heading"><span class="section-kicker">Update</span><h2>My information</h2></div>
+                    <form id="student-profile-form" class="stack-form" method="post">
+                        <label>Student ID<input id="student-profile-id" required readonly></label>
+                        <label>Full name<input id="student-profile-name" required></label>
+                        <label>Department<input id="student-profile-department" required></label>
+                        <label>Course<input id="student-profile-course"></label>
+                        <label>Year<input id="student-profile-year" type="number" min="1" required></label>
+                        <label>Email<input id="student-profile-email" type="email"></label>
+                        <label>Phone<input id="student-profile-phone"></label>
+                        <button class="btn btn-primary" type="submit">Update details</button>
+                        <p id="student-profile-message" class="form-message" role="status"></p>
+                    </form>
+                </section>
+            </div>
+        </section>
+
+        <section id="password-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Account security</p><h1>Change password</h1><p>Update the password used to sign in to your account.</p></header>
+            <div class="profile-layout password-layout">
+                <section class="action-panel">
+                    <div class="panel-heading"><span class="section-kicker">Security</span><h2>Update password</h2></div>
+                    <form id="password-form" class="stack-form">
+                        <label>Current password<input id="current-password" type="password" autocomplete="current-password" required></label>
+                        <label>New password<input id="new-password" type="password" autocomplete="new-password" minlength="6" required></label>
+                        <label>Confirm new password<input id="confirm-password" type="password" autocomplete="new-password" minlength="6" required></label>
+                        <button class="btn btn-primary" type="submit">Change password</button>
+                        <p id="password-message" class="form-message" role="status"></p>
+                    </form>
+                </section>
+            </div>
+        </section>
+    </main>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="/js/react-capture.js"></script>
+    <script src="/js/app.js?v=20260904-3"></script>
+</body>
+</html>
