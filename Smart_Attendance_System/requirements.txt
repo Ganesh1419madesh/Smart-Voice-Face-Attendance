@@ -27,3 +27,4 @@ openpyxl>=3.1.2
 
 # Utilities
 pickle5; python_version < "3.8"
+gunicorn
