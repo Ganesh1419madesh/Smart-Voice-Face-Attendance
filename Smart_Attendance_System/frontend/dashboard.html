@@ -33,9 +33,61 @@
             </section>
         </section>
 
+        <section id="attendance-history-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Attendance records</p><h1>Attendance History</h1><p>Review attendance marks across a selected date range.</p></header>
+            <section class="table-container">
+                <header class="table-header">
+                    <h3>Attendance records</h3>
+                    <div class="table-actions">
+                        <label>From<input id="history-start" type="date"></label>
+                        <label>To<input id="history-end" type="date"></label>
+                        <button id="history-filter" class="btn btn-secondary" type="button">Apply</button>
+                    </div>
+                </header>
+                <div class="table-scroll"><table class="data-table"><thead><tr><th>Date</th><th>Student ID</th><th>Name</th><th>Department</th><th>Time In</th><th>Time Out</th><th>Status</th></tr></thead><tbody id="history-rows"><tr><td colspan="7" class="empty-state">Choose a date range to view records.</td></tr></tbody></table></div>
+            </section>
+        </section>
+
+        <section id="my-attendance-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Personal records</p><h1>My Attendance</h1><p>View your attendance record for today.</p></header>
+            <section class="table-container">
+                <header class="table-header"><h3>Today's attendance</h3><button id="my-attendance-refresh" class="btn btn-secondary" type="button">Refresh</button></header>
+                <div class="table-scroll"><table class="data-table"><thead><tr><th>Date</th><th>Time In</th><th>Time Out</th><th>Status</th><th>Method</th></tr></thead><tbody id="my-attendance-rows"><tr><td colspan="5" class="empty-state">Loading attendance...</td></tr></tbody></table></div>
+            </section>
+        </section>
+
         <section id="attendance-page" class="page-section">
-            <header class="page-header"><p class="eyebrow">Live capture</p><h1>Take attendance</h1><p>Marking automatically captures the camera frame and checks the student voice.</p></header>
-            <div id="react-attendance-root" class="attendance-layout"></div>
+            <header class="page-header"><p class="eyebrow">Live capture</p><h1>Take attendance</h1><p>Capture a face to recognize the student and mark attendance.</p></header>
+            <div class="attendance-layout">
+                <section class="camera-card">
+                    <div class="panel-heading"><span class="section-kicker">Live recognition</span><h2>Face attendance</h2></div>
+                    <div class="camera-feed">
+                        <video id="camera" autoplay playsinline muted></video>
+                        <div id="camera-placeholder" class="camera-placeholder"><span class="cam-icon" aria-hidden="true">&#9673;</span><span>Camera is off</span></div>
+                        <canvas id="photo-canvas" hidden></canvas>
+                    </div>
+                    <div class="camera-controls">
+                        <button id="start-camera" class="btn btn-primary" type="button">Start Camera</button>
+                        <button id="stop-camera" class="btn btn-ghost" type="button" disabled>Stop</button>
+                    </div>
+                    <label class="attendance-voice-option"><input id="attendance-use-voice" type="checkbox"> Include voice check</label>
+                </section>
+                <section class="log-card">
+                    <h3>Recognized student</h3>
+                    <p id="attendance-message" class="attendance-notice" role="status" aria-live="polite">Start the camera to begin attendance scanning.</p>
+                    <div id="recognized-student" class="recognized-student" hidden>
+                        <h4 id="recognized-name"></h4>
+                        <dl>
+                            <div><dt>Student ID</dt><dd id="recognized-id"></dd></div>
+                            <div><dt>Department</dt><dd id="recognized-department"></dd></div>
+                            <div><dt>Course</dt><dd id="recognized-course"></dd></div>
+                            <div><dt>Year</dt><dd id="recognized-year"></dd></div>
+                            <div><dt>Email</dt><dd id="recognized-email"></dd></div>
+                            <div><dt>Phone</dt><dd id="recognized-phone"></dd></div>
+                        </dl>
+                    </div>
+                </section>
+            </div>
         </section>
 
         <section id="register-page" class="page-section">
@@ -67,6 +119,14 @@
                     <p>Staff profiles can manage attendance and view the student directory according to the account role assigned at login.</p>
                 </section>
             </div>
+        </section>
+
+        <section id="staff-list-page" class="page-section">
+            <header class="page-header"><p class="eyebrow">Directory</p><h1>Staff</h1><p>View registered staff profiles.</p></header>
+            <section class="table-container">
+                <header class="table-header"><h3>Staff directory</h3><button id="staff-refresh" class="btn btn-secondary" type="button">Refresh</button></header>
+                <div class="table-scroll"><table class="data-table"><thead><tr><th>Staff ID</th><th>Name</th><th>Designation</th><th>Department</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody id="staff-rows"></tbody></table></div>
+            </section>
         </section>
 
         <section id="voice-page" class="page-section">
@@ -101,7 +161,7 @@
                     <div class="panel-heading"><span class="section-kicker">Attendance</span><h2>Daily operation</h2></div>
                     <div class="settings-list">
                         <div class="setting-row"><div><strong>Attendance cooldown</strong><span>Time before the same student can be marked again.</span></div><b>30 seconds</b></div>
-                        <div class="setting-row"><div><strong>Working hours</strong><span>Attendance window used by the register.</span></div><b>08:00 - 18:00</b></div>
+                        <div class="setting-row"><div><strong>Working hours</strong><span>Attendance window used by the register.</span></div><b>10:00 AM - 5:45 PM</b></div>
                         <div class="setting-row"><div><strong>Camera processing</strong><span>Frames skipped between recognition checks.</span></div><b>Every 2nd frame</b></div>
                     </div>
                 </section>

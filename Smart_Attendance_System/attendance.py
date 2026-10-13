@@ -11,7 +11,7 @@ from config import (FACE_RECOGNITION_TOLERANCE, FACE_DETECTION_MODEL,
                     CAMERA_INDEX, CAMERA_WIDTH, CAMERA_HEIGHT, FRAME_SKIP,
                     WORKING_HOURS_START, WORKING_HOURS_END)
 from database import mark_attendance, get_student
-from train_model import load_encodings, model_exists
+from train_model import load_encodings, model_exists, prepare_face_image
 
 
 def _determine_status() -> str:
@@ -35,6 +35,9 @@ class FaceAttendance:
         self._running       = False
         self._cap           = None
         self._known_data    = {}   # {student_id: [encodings]}
+        self._known_encodings = np.empty((0, 128), dtype=np.float64)
+        self._known_ids     = []
+        self._student_names = {}
         self._recent_marks  = {}  # {student_id: last_mark_time}
         self._cooldown_sec  = 30
         self._frame_count   = 0
@@ -45,6 +48,15 @@ class FaceAttendance:
         self._known_data = load_encodings()
         if not self._known_data:
             return False, "No encodings in model."
+        self._known_ids = []
+        flattened = []
+        for student_id, encodings in self._known_data.items():
+            for encoding in encodings:
+                self._known_ids.append(student_id)
+                flattened.append(encoding)
+            info = get_student(student_id)
+            self._student_names[student_id] = info["name"] if info else student_id
+        self._known_encodings = np.asarray(flattened, dtype=np.float64)
         return True, f"Loaded {len(self._known_data)} student(s)."
 
     def _recently_marked(self, student_id: str) -> bool:
@@ -58,7 +70,8 @@ class FaceAttendance:
         Detect and recognize faces in a BGR frame.
         Returns list of (top, right, bottom, left, student_id, name, color).
         """
-        small  = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+        small  = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5,
+                    interpolation=cv2.INTER_AREA)
         rgb    = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
 
         locations = face_recognition.face_locations(rgb, model=FACE_DETECTION_MODEL)
@@ -71,20 +84,13 @@ class FaceAttendance:
             student_id = None
             color      = (0, 0, 200)  # red for unknown
 
-            for sid, known_encs in self._known_data.items():
-                matches   = face_recognition.compare_faces(
-                    known_encs, enc, tolerance=FACE_RECOGNITION_TOLERANCE
-                )
-                distances = face_recognition.face_distance(known_encs, enc)
-
-                if any(matches):
-                    best_idx   = int(np.argmin(distances))
-                    if matches[best_idx]:
-                        student_id = sid
-                        info = get_student(sid)
-                        label = info["name"] if info else sid
-                        color = (0, 200, 0)  # green
-                        break
+            if len(self._known_encodings):
+                distances = face_recognition.face_distance(self._known_encodings, enc)
+                best_idx = int(np.argmin(distances))
+                if distances[best_idx] <= FACE_RECOGNITION_TOLERANCE:
+                    student_id = self._known_ids[best_idx]
+                    label = self._student_names.get(student_id, student_id)
+                    color = (0, 200, 0)  # green
 
             results.append((top, right, bottom, left, student_id, label, color))
         return results

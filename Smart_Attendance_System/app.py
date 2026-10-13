@@ -28,6 +28,7 @@ from database import (
     update_student, get_student_id_for_username, link_student_to_username,
     mark_attendance, mark_checkout, save_attendance_photo,
     save_staff_profile, get_staff_profile_by_username, get_all_staff,
+    delete_staff_profile,
 )
 
 # ── App setup ────────────────────────────────────────────────────────────────
@@ -208,6 +209,15 @@ def api_staff_list():
     return jsonify(get_all_staff())
 
 
+@app.route("/api/staff/<staff_id>", methods=["DELETE"])
+@login_required
+@role_required("admin")
+def api_delete_staff(staff_id):
+    if not delete_staff_profile(staff_id):
+        return jsonify({"success": False, "message": "Staff profile not found."}), 404
+    return jsonify({"success": True, "message": f"Staff profile {staff_id} deleted."})
+
+
 @app.route("/api/logout", methods=["POST"])
 @login_required
 def api_logout():
@@ -261,12 +271,15 @@ def api_attendance_by_date():
 
 @app.route("/api/attendance/range")
 @login_required
-@role_required("admin", "staff")
+@role_required("admin", "staff", "student")
 def api_attendance_range():
     start = request.args.get("start", date.today().isoformat())
     end = request.args.get("end", date.today().isoformat())
     dept = request.args.get("department", "")
     records = get_attendance_range(start, end, dept)
+    if session.get("role") == "student":
+        student_id = get_student_id_for_username(session.get("user"))
+        records = [record for record in records if record.get("student_id") == student_id]
     return jsonify(records)
 
 
@@ -331,17 +344,17 @@ def api_capture_photo():
 @login_required
 @role_required("admin", "staff", "student")
 def api_auto_attendance():
-    """Recognize a face, mark attendance, save the photo, and verify by voice."""
+    """Recognize a face, mark attendance, and save the photo."""
     data = request.get_json(force=True)
     student_id = data.get("student_id", "").strip()
     photo_data = data.get("photo", "")
-    use_voice = bool(data.get("use_voice", True))
+    use_voice = bool(data.get("use_voice", False))
     student_account_id = None
     if session.get("role") == "student":
         student_account_id = get_student_id_for_username(session.get("user"))
         if not student_account_id:
             return jsonify({"success": False, "message": "No student profile is linked to this account."}), 400
-        if student_id and student_id != student_account_id:
+        if student_id and student_id.casefold() != student_account_id.casefold():
             return jsonify({"success": False, "message": "You can only mark your own attendance."}), 403
     if not photo_data:
         return jsonify({"success": False, "message": "Camera photo is required."}), 400
@@ -352,7 +365,8 @@ def api_auto_attendance():
             import face_recognition
             import numpy as np
             from config import FACE_DETECTION_MODEL, FACE_RECOGNITION_TOLERANCE
-            from train_model import load_encodings, model_exists
+            from train_model import (load_encodings, model_exists,
+                                     prepare_face_image)
 
             if not model_exists():
                 return jsonify({"success": False, "message": "Face model is not trained yet."}), 400
@@ -360,7 +374,7 @@ def api_auto_attendance():
             image = cv2.imdecode(np.frombuffer(base64.b64decode(encoded), np.uint8), cv2.IMREAD_COLOR)
             if image is None:
                 return jsonify({"success": False, "message": "Captured image could not be read."}), 400
-            rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            rgb = prepare_face_image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
             locations = face_recognition.face_locations(rgb, model=FACE_DETECTION_MODEL)
             detected = face_recognition.face_encodings(rgb, locations)
             known_data = load_encodings()
@@ -372,15 +386,23 @@ def api_auto_attendance():
             face_encoding = detected[0]
             best_student = None
             best_distance = float("inf")
+            known_ids = []
+            flattened_encodings = []
             for candidate_id, known_encodings in known_data.items():
-                distances = face_recognition.face_distance(known_encodings, face_encoding)
-                if len(distances) and float(np.min(distances)) < best_distance:
-                    best_distance = float(np.min(distances))
-                    best_student = candidate_id
+                for known_encoding in known_encodings:
+                    known_ids.append(candidate_id)
+                    flattened_encodings.append(known_encoding)
+            if flattened_encodings:
+                distances = face_recognition.face_distance(
+                    np.asarray(flattened_encodings), face_encoding
+                )
+                best_idx = int(np.argmin(distances))
+                best_distance = float(distances[best_idx])
+                best_student = known_ids[best_idx]
             if best_student is None or best_distance > FACE_RECOGNITION_TOLERANCE:
                 return jsonify({"success": False, "message": "Face not recognized. Train the model or try again."}), 404
             student_id = best_student
-            if student_account_id and student_id != student_account_id:
+            if student_account_id and student_id.casefold() != student_account_id.casefold():
                 return jsonify({"success": False, "message": "The captured face does not match your student account."}), 403
         except Exception as exc:
             return jsonify({"success": False, "message": f"Face recognition failed: {exc}"}), 500
@@ -388,12 +410,18 @@ def api_auto_attendance():
     student = get_student(student_id)
     if not student:
         return jsonify({"success": False, "message": f"Student '{student_id}' not found."}), 404
+    student_id = student["student_id"]
 
     now = datetime.now().strftime("%H:%M")
     status = "Present" if now <= WORKING_HOURS_START else "Late"
     attendance_result = mark_attendance(student_id, method="manual+photo", status=status)
     response = {**attendance_result, "student_id": student_id,
-                "student_name": student["name"], "voice": None}
+                "student_name": student["name"],
+                "student_details": {field: student.get(field) for field in (
+                    "student_id", "name", "department", "course", "year",
+                    "email", "phone",
+                )},
+                "voice": None}
 
     if attendance_result["success"]:
         filename = save_attendance_photo(student_id, photo_data)
@@ -513,17 +541,20 @@ def api_face_samples(student_id):
 @role_required("admin", "staff")
 def api_voice_register():
     """Record voice samples using the server microphone for a student."""
-    data = request.get_json(force=True)
-    student_id = data.get("student_id", "").strip()
-    count = min(max(int(data.get("count", 5)), 1), 10)
-    if not get_student(student_id):
-        return jsonify({"success": False, "message": "Student not found."}), 404
-    from voice_register import register_voice
-    ok, message = register_voice(student_id, count=count)
-    if ok:
-        from database import update_student
-        update_student(student_id, has_voice=1)
-    return jsonify({"success": ok, "message": message}), 200 if ok else 400
+    try:
+        data = request.get_json(force=True)
+        student_id = data.get("student_id", "").strip()
+        count = min(max(int(data.get("count", 5)), 1), 10)
+        if not get_student(student_id):
+            return jsonify({"success": False, "message": "Student not found. Register the student first."}), 404
+        from voice_register import register_voice
+        ok, message = register_voice(student_id, count=count)
+        if ok:
+            from database import update_student
+            update_student(student_id, has_voice=1)
+        return jsonify({"success": ok, "message": message}), 200 if ok else 400
+    except Exception as error:
+        return jsonify({"success": False, "message": f"Voice registration failed: {error}"}), 500
 
 
 @app.route("/api/voice/recognize", methods=["POST"])
@@ -531,16 +562,31 @@ def api_voice_register():
 @role_required("admin", "staff")
 def api_voice_recognize():
     """Run the existing server-side voice recognition attendance pipeline."""
-    from voice_recognition import mark_by_voice
-    return jsonify(mark_by_voice())
+    try:
+        from voice_recognition import mark_by_voice
+        return jsonify(mark_by_voice())
+    except Exception as error:
+        return jsonify({"recognized": False, "message": f"Voice recognition failed: {error}"}), 500
 
 
 @app.route("/api/models/status")
 @login_required
 @role_required("admin", "staff")
 def api_model_status():
-    from train_model import model_exists
-    from voice_recognition import voice_model_exists
+    try:
+        from train_model import model_exists
+        face_model_available = model_exists()
+    except Exception as exc:
+        print(f"[API] Face model status unavailable: {exc}")
+        face_model_available = False
+
+    try:
+        from voice_recognition import voice_model_exists
+        voice_model_available = voice_model_exists()
+    except Exception as exc:
+        print(f"[API] Voice model status unavailable: {exc}")
+        voice_model_available = False
+
     dataset_dir = os.path.join(BASE_DIR, "dataset")
     sample_counts = {}
     if os.path.isdir(dataset_dir):
@@ -561,8 +607,8 @@ def api_model_status():
         default=0,
     )
     model_path = os.path.join(BASE_DIR, "model", "face_encodings.pkl")
-    model_current = model_exists() and os.path.getmtime(model_path) >= newest_sample
-    return jsonify({"face_model": model_exists(), "voice_model": voice_model_exists(),
+    model_current = face_model_available and os.path.exists(model_path) and os.path.getmtime(model_path) >= newest_sample
+    return jsonify({"face_model": face_model_available, "voice_model": voice_model_available,
                     "face_training_ready": training_ready,
                     "face_model_current": model_current,
                     "face_sample_total": total_samples,
@@ -573,8 +619,11 @@ def api_model_status():
 @login_required
 @role_required("admin")
 def api_train_face():
-    from train_model import train_face_model
-    ok, message = train_face_model()
+    try:
+        from train_model import train_face_model
+        ok, message = train_face_model()
+    except Exception as exc:
+        ok, message = False, f"Face model training failed: {exc}"
     return jsonify({"success": ok, "message": message}), 200 if ok else 400
 
 
@@ -668,14 +717,20 @@ def api_report(report_type):
 
 # ── Run ──────────────────────────────────────────────────────────────────────
 
-def start_server(host="0.0.0.0", port=5000, debug=True):
-    """Initialize DB and start the Flask dev server."""
+def start_server(host="127.0.0.1", port=5000, debug=True):
+    """Initialize DB and start Flask, optionally using a configured TLS certificate."""
     initialize_database()
+    cert_file = os.environ.get("ATTENDANCE_TLS_CERT")
+    key_file = os.environ.get("ATTENDANCE_TLS_KEY")
+    if bool(cert_file) != bool(key_file):
+        raise RuntimeError("Set both ATTENDANCE_TLS_CERT and ATTENDANCE_TLS_KEY to enable HTTPS.")
+    ssl_context = (cert_file, key_file) if cert_file else None
+    scheme = "https" if ssl_context else "http"
     print("=" * 50)
     print("  Smart Attendance System — Web Server")
-    print(f"  Open http://localhost:{port} in your browser")
+    print(f"  Open {scheme}://localhost:{port} in your browser")
     print("=" * 50)
-    app.run(host=host, port=port, debug=debug)
+    app.run(host=host, port=port, debug=debug, ssl_context=ssl_context)
 
 
 if __name__ == "__main__":

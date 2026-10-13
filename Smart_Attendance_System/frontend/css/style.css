@@ -955,6 +955,43 @@ button,
     transition: var(--transition);
 }
 
+.recognized-student {
+    padding-top: 8px;
+}
+
+.recognized-student h4 {
+    margin: 4px 0 16px;
+    color: var(--text);
+    font-size: 1.15rem;
+}
+
+.recognized-student dl {
+    display: grid;
+    gap: 0;
+    margin: 0;
+}
+
+.recognized-student dl div {
+    display: grid;
+    grid-template-columns: minmax(88px, 0.8fr) minmax(0, 1.2fr);
+    gap: 10px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border-light);
+}
+
+.recognized-student dt {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+}
+
+.recognized-student dd {
+    min-width: 0;
+    margin: 0;
+    color: var(--text);
+    font-size: 0.86rem;
+    overflow-wrap: anywhere;
+}
+
 .notice-success { background: var(--success-bg); color: #2e7d32; }
 .notice-error   { background: var(--error-bg);   color: #c62828; }
 .notice-info    { background: var(--info-bg);     color: #1565c0; }

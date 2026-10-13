@@ -43,8 +43,8 @@ VOICE_SAMPLES_COUNT  = 5      # samples per student during registration
 
 # Attendance settings
 ATTENDANCE_COOLDOWN_SECONDS = 30   # prevent duplicate marks within N seconds
-WORKING_HOURS_START         = "08:00"
-WORKING_HOURS_END           = "18:00"
+WORKING_HOURS_START         = "10:00"
+WORKING_HOURS_END           = "17:45"
 
 # GUI settings
 APP_TITLE        = "Smart Attendance System"

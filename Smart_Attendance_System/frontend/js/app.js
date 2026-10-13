@@ -44,7 +44,7 @@ const DASHBOARD_MENU = {
     ],
     student: [
         { page: 'overview', label: 'Dashboard' },
-        { page: 'attendance', label: 'My Attendance' },
+        { page: 'my-attendance', label: 'My Attendance' },
         { page: 'history', label: 'Attendance History' },
         { page: 'profile', label: 'My Profile' },
         { page: 'password', label: 'Change Password' },
@@ -60,11 +60,12 @@ const PAGE_SECTIONS = {
     students: 'students-page',
     training: 'training-page',
     staff: 'staff-page',
-    'staff-list': 'students-page',
+    'staff-list': 'staff-list-page',
     departments: 'departments-page',
     settings: 'settings-page',
     today: 'overview-page',
-    history: 'overview-page',
+    'my-attendance': 'my-attendance-page',
+    history: 'attendance-history-page',
     profile: 'profile-page',
     password: 'password-page',
 };
@@ -102,9 +103,16 @@ function renderSidebar(role = 'admin') {
             nav.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === button));
             const targetSection = PAGE_SECTIONS[button.dataset.page] || 'overview-page';
             document.querySelectorAll('.page-section').forEach((section) => section.classList.toggle('active', section.id === targetSection));
+            if (button.dataset.page !== 'attendance' && (cameraStream || cameraStarting)) stopCamera();
             if (button.dataset.page === 'students') await loadStudents();
+            if (button.dataset.page === 'staff-list') await loadStaff();
             if (button.dataset.page === 'departments') await loadDepartments();
             if (button.dataset.page === 'overview') await loadOverview();
+            if (button.dataset.page === 'my-attendance') await loadMyAttendance();
+            if (button.dataset.page === 'history') {
+                setHistoryDates();
+                await loadAttendanceHistory();
+            }
             if (button.dataset.page === 'reports') setReportDates();
             if (button.dataset.page === 'training') await loadModelStatus();
             if (button.dataset.page === 'profile') await (document.body.dataset.role === 'student' ? loadStudentProfilePage() : loadProfilePage());
@@ -310,10 +318,44 @@ async function loadOverview() {
     body.innerHTML = records.length ? records.map((record) => `<tr><td><strong>${record.student_id}</strong></td><td>${record.name}</td><td>${record.department}</td><td>${record.time_in || '--'}</td><td>${record.time_out || '--'}</td><td><span class="badge ${record.status.toLowerCase()}">${record.status}</span></td><td>${photoCell(record)}</td></tr>`).join('') : '<tr><td colspan="7" class="empty-state">No attendance marks yet today.</td></tr>';
 }
 
+async function loadMyAttendance() {
+    const records = await api('/api/attendance/today');
+    $('#my-attendance-rows').innerHTML = records.length
+        ? records.map((record) => `<tr><td>${record.date}</td><td>${record.time_in || '--'}</td><td>${record.time_out || '--'}</td><td><span class="badge ${record.status.toLowerCase()}">${record.status}</span></td><td>${record.method || '--'}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="empty-state">No attendance has been recorded for you today.</td></tr>';
+}
+
+async function loadAttendanceHistory() {
+    const start = $('#history-start').value;
+    const end = $('#history-end').value;
+    if (!start || !end) return;
+    const params = new URLSearchParams({ start, end });
+    const records = await api(`/api/attendance/range?${params}`);
+    $('#history-rows').innerHTML = records.length
+        ? records.map((record) => `<tr><td>${record.date}</td><td><strong>${record.student_id}</strong></td><td>${record.name}</td><td>${record.department}</td><td>${record.time_in || '--'}</td><td>${record.time_out || '--'}</td><td><span class="badge ${record.status.toLowerCase()}">${record.status}</span></td></tr>`).join('')
+        : '<tr><td colspan="7" class="empty-state">No attendance records found for these dates.</td></tr>';
+}
+
+function setHistoryDates() {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    $('#history-start').value = start.toISOString().slice(0, 10);
+    $('#history-end').value = end.toISOString().slice(0, 10);
+}
+
 async function loadStudents(query = '') {
     const students = await api(`/api/students${query ? `?q=${encodeURIComponent(query)}` : ''}`);
     $('#student-rows').innerHTML = students.length ? students.map((student) => `<tr><td><strong>${student.student_id}</strong></td><td>${student.name}</td><td>${student.department}</td><td>${student.course || '--'}</td><td>${student.has_face ? 'Ready' : '--'}</td><td>${student.has_voice ? 'Ready' : '--'}</td><td><button class="btn btn-danger btn-small" data-delete-student="${encodeURIComponent(student.student_id)}" type="button">Delete</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty-state">No students match that search.</td></tr>';
     $('#student-options').innerHTML = students.map((student) => `<option value="${student.student_id}">${student.name}</option>`).join('');
+}
+
+async function loadStaff() {
+    const staff = await api('/api/staff');
+    const actions = document.body.dataset.role === 'admin';
+    $('#staff-rows').innerHTML = staff.length
+        ? staff.map((member) => `<tr><td><strong>${member.staff_id}</strong></td><td>${member.name}</td><td>${member.designation || 'Staff'}</td><td>${member.department}</td><td>${member.email || '--'}</td><td>${member.phone || '--'}</td>${actions ? `<td><button class="btn btn-danger btn-small" data-delete-staff="${encodeURIComponent(member.staff_id)}" type="button">Delete</button></td>` : ''}</tr>`).join('')
+        : `<tr><td colspan="${actions ? 7 : 6}" class="empty-state">No staff profiles have been registered.</td></tr>`;
 }
 
 async function loadDepartments() {
@@ -334,6 +376,11 @@ async function loadDepartments() {
 }
 
 let cameraStream = null;
+let cameraStarting = false;
+let cameraRequestId = 0;
+let cameraScanTimer = null;
+let cameraScanBusy = false;
+let cameraScanActive = false;
 let markedStudent = null;
 let pendingPhoto = null;
 let registerStream = null;
@@ -342,23 +389,59 @@ let faceSamples = [];
 let registerCaptureTimer = null;
 
 async function startCamera() {
+    if (cameraStream || cameraStarting) return;
+    cameraStarting = true;
+    const requestId = ++cameraRequestId;
     const video = $('#camera');
+    const startButton = $('#start-camera');
+    startButton.disabled = true;
+    startButton.textContent = 'Starting...';
     try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false });
+        if (!navigator.mediaDevices?.getUserMedia) {
+            throw new Error('Camera access is unavailable in this browser or page context.');
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: false });
+        if (requestId !== cameraRequestId || !$('#attendance-page').classList.contains('active')) {
+            stream.getTracks().forEach((track) => track.stop());
+            return;
+        }
+        cameraStream = stream;
         video.srcObject = cameraStream;
+        await video.play();
         $('#camera-placeholder').hidden = true;
-        $('#start-camera').disabled = true;
         $('#stop-camera').disabled = false;
-    } catch (err) { showMessage($('#attendance-message'), `Camera unavailable: ${err.message}`, 'error'); }
+        cameraScanActive = true;
+        showMessage($('#attendance-message'), 'Camera ready. Scanning for a registered face...', 'info');
+        scheduleAttendanceScan(400);
+    } catch (err) {
+        cameraStream?.getTracks().forEach((track) => track.stop());
+        cameraStream = null;
+        video.srcObject = null;
+        $('#camera-placeholder').hidden = false;
+        $('#stop-camera').disabled = true;
+        showMessage($('#attendance-message'), `Camera unavailable: ${err.message}`, 'error');
+    } finally {
+        if (requestId === cameraRequestId) {
+            cameraStarting = false;
+            startButton.disabled = Boolean(cameraStream);
+            startButton.textContent = 'Start Camera';
+        }
+    }
 }
 
 function stopCamera() {
+    cameraRequestId += 1;
+    cameraStarting = false;
+    cameraScanActive = false;
+    clearTimeout(cameraScanTimer);
     cameraStream?.getTracks().forEach((track) => track.stop());
     cameraStream = null;
     $('#camera').srcObject = null;
     $('#camera-placeholder').hidden = false;
     $('#start-camera').disabled = false;
+    $('#start-camera').textContent = 'Start Camera';
     $('#stop-camera').disabled = true;
+    showMessage($('#attendance-message'), 'Camera stopped.', '');
 }
 
 function capturePhoto() {
@@ -371,25 +454,45 @@ function capturePhoto() {
     pendingPhoto = canvas.toDataURL('image/jpeg', 0.86);
 }
 
-async function markAttendance() {
-    if (!cameraStream) {
-        await startCamera();
-        if (!cameraStream) return;
-    }
+function scheduleAttendanceScan(delay = 2500) {
+    clearTimeout(cameraScanTimer);
+    if (cameraScanActive) cameraScanTimer = setTimeout(scanAttendance, delay);
+}
+
+function showRecognizedStudent(student) {
+    if (!student) return;
+    $('#recognized-name').textContent = student.name || 'Unknown student';
+    $('#recognized-id').textContent = student.student_id || '--';
+    $('#recognized-department').textContent = student.department || '--';
+    $('#recognized-course').textContent = student.course || '--';
+    $('#recognized-year').textContent = student.year ? `Year ${student.year}` : '--';
+    $('#recognized-email').textContent = student.email || '--';
+    $('#recognized-phone').textContent = student.phone || '--';
+    $('#recognized-student').hidden = false;
+}
+
+async function scanAttendance() {
+    if (!cameraStream || !cameraScanActive || cameraScanBusy) return;
+    cameraScanBusy = true;
     capturePhoto();
-    if (!pendingPhoto) return showMessage($('#attendance-message'), 'The camera frame was not ready. Try again.', 'error');
-    const button = $('#mark-attendance');
-    button.disabled = true;
-    showMessage($('#attendance-message'), 'Saving attendance photo and checking voice...', '');
     try {
+        if (!pendingPhoto) throw new Error('Camera frame is not ready yet.');
         const result = await api('/api/attendance/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photo: pendingPhoto, use_voice: $('#attendance-use-voice').checked }) });
+        showRecognizedStudent(result.student_details);
+        const isNewMark = result.success && markedStudent !== result.student_id;
         markedStudent = result.student_id;
         const voiceMessage = result.voice?.message ? ` Voice: ${result.voice.message}` : '';
-        showMessage($('#attendance-message'), `${result.student_name || result.student_id}: ${result.message}${voiceMessage}`, result.success ? 'success' : '');
+        showMessage($('#attendance-message'), `${result.student_name || result.student_id}: ${result.message}${voiceMessage}`, result.success ? 'success' : 'info');
+        if (isNewMark) await loadOverview();
+    } catch (err) {
+        const noMatch = /No face detected|Face not recognized|Multiple faces detected/i.test(err.message);
+        if (noMatch) $('#recognized-student').hidden = true;
+        showMessage($('#attendance-message'), noMatch ? `${err.message} Scanning again...` : err.message, noMatch ? 'info' : 'error');
+    } finally {
         pendingPhoto = null;
-        await loadOverview();
-    } catch (err) { showMessage($('#attendance-message'), err.message, 'error'); }
-    finally { button.disabled = false; }
+        cameraScanBusy = false;
+        scheduleAttendanceScan();
+    }
 }
 
 async function savePhoto(studentId) {
@@ -550,11 +653,15 @@ function bindDashboard() {
         if (button.dataset.page === 'training') await loadModelStatus();
     }));
     $('#refresh').addEventListener('click', loadOverview);
+    $('#my-attendance-refresh')?.addEventListener('click', loadMyAttendance);
+    $('#history-filter').addEventListener('click', loadAttendanceHistory);
     $('#student-refresh').addEventListener('click', () => loadStudents($('#student-search').value.trim()));
+    $('#staff-refresh')?.addEventListener('click', loadStaff);
     $('#department-refresh').addEventListener('click', loadDepartments);
     $('#student-search').addEventListener('input', (event) => loadStudents(event.target.value.trim()));
+    $('#start-camera').addEventListener('click', startCamera);
+    $('#stop-camera').addEventListener('click', stopCamera);
     if (window.mountReactCapture) {
-        mountReactCapture($('#react-attendance-root'), 'attendance');
         mountReactCapture($('#react-registration-root'), 'registration');
     }
     $('#register-form').addEventListener('submit', registerStudent);
@@ -576,6 +683,12 @@ function bindDashboard() {
         await api(`/api/students/${button.dataset.deleteStudent}`, { method: 'DELETE' });
         await loadStudents($('#student-search').value.trim());
         await loadOverview();
+    });
+    $('#staff-rows')?.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-delete-staff]');
+        if (!button || !window.confirm(`Delete staff profile ${decodeURIComponent(button.dataset.deleteStaff)}?`)) return;
+        await api(`/api/staff/${button.dataset.deleteStaff}`, { method: 'DELETE' });
+        await loadStaff();
     });
     $('#staff-profile-form')?.addEventListener('submit', saveStaffProfile);
     setReportDates();

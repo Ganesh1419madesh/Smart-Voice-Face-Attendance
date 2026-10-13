@@ -26,6 +26,13 @@
                     setMessage('Save the student record before starting capture.');
                     return;
                 }
+                if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+                    const localHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+                    setMessage(localHost
+                        ? 'Camera is not supported by this browser. Use a current Chrome, Edge, or Safari browser.'
+                        : 'Camera access requires HTTPS on phones. Open this app through an HTTPS address or use localhost on the computer.');
+                    return;
+                }
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
                     audio: false,
@@ -36,7 +43,13 @@
                 setMessage(mode === 'registration' ? 'Automatic capture started. Keep looking at the camera.' : 'Camera ready. Scan when you are ready.');
                 if (mode === 'registration') beginAutomaticSamples();
             } catch (error) {
-                setMessage(`Camera unavailable: ${error.message}`);
+                const messages = {
+                    NotAllowedError: 'Camera permission was denied. Allow camera access in the browser settings and try again.',
+                    NotFoundError: 'No camera was found on this device.',
+                    NotReadableError: 'The camera is busy or unavailable. Close other camera apps and try again.',
+                    SecurityError: 'Camera access was blocked because this page is not using HTTPS.',
+                };
+                setMessage(`Camera unavailable: ${messages[error.name] || error.message}`);
             }
         }
 
@@ -95,7 +108,7 @@
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ photo, use_voice: true }),
+                    body: JSON.stringify({ photo, use_voice: false }),
                 });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.message || 'Attendance scan failed.');

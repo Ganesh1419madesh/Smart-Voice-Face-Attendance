@@ -4,6 +4,7 @@ main.py - Entry point for Smart Attendance System
 
 import os
 import sys
+from pathlib import Path
 
 # Ensure the project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,4 +26,7 @@ def main():
 
 
 if __name__ == "__main__":
+    venv_python = Path(__file__).resolve().parents[1] / "venv" / "Scripts" / "python.exe"
+    if venv_python.exists() and sys.prefix == sys.base_prefix:
+        os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
     main()

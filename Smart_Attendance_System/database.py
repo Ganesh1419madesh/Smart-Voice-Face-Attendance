@@ -178,7 +178,7 @@ def get_student(student_id: str) -> dict | None:
     """Fetch one student as a dict."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM students WHERE student_id = ?", (student_id,)
+            "SELECT * FROM students WHERE student_id = ? COLLATE NOCASE", (student_id,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -512,6 +512,13 @@ def get_all_staff() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM staff ORDER BY name").fetchall()
     return [dict(r) for r in rows]
+
+
+def delete_staff_profile(staff_id: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM staff WHERE staff_id = ?", (staff_id,))
+        conn.commit()
+    return cursor.rowcount > 0
 
 
 # ─────────────────────────── BOOTSTRAP ───────────────────────────────────────

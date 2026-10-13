@@ -64,6 +64,19 @@ def _status_fill(status: str):
     return _RED_FILL
 
 
+def _add_photo(ws, photo_path: str | None, cell_ref: str):
+    if not photo_path:
+        return
+    image_path = os.path.join(os.path.dirname(__file__), "photos", photo_path)
+    if not os.path.isfile(image_path):
+        return
+    image = ExcelImage(image_path)
+    image.width = 120
+    image.height = 90
+    ws.add_image(image, cell_ref)
+    ws.row_dimensions[ws[cell_ref].row].height = 72
+
+
 # ── Report generators ─────────────────────────────────────────────────────────
 
 def generate_daily_report(target_date: str | None = None) -> str:
@@ -132,15 +145,7 @@ def generate_daily_report(target_date: str | None = None) -> str:
         # Colour status cell
         status_cell      = ws.cell(row=row_num, column=8)
         status_cell.fill = _status_fill(values[7])
-        photo_path = rec.get("photo_path") if rec else None
-        if photo_path:
-            image_path = os.path.join(os.path.dirname(__file__), "photos", photo_path)
-            if os.path.isfile(image_path):
-                image = ExcelImage(image_path)
-                image.width = 120
-                image.height = 90
-                ws.add_image(image, f"I{row_num}")
-                ws.row_dimensions[row_num].height = 72
+        _add_photo(ws, rec.get("photo_path") if rec else None, f"I{row_num}")
         row_num += 1
 
     # Summary row
@@ -181,7 +186,7 @@ def generate_range_report(start_date: str, end_date: str,
     ws1 = wb.active
     ws1.title = "Detailed Records"
 
-    ws1.merge_cells("A1:H1")
+    ws1.merge_cells("A1:I1")
     ws1["A1"].value     = (f"Attendance Report  |  {start_date} to {end_date}"
                            + (f"  |  Dept: {department}" if department else ""))
     ws1["A1"].font      = Font(bold=True, size=13, color="FFFFFF", name="Calibri")
@@ -190,7 +195,7 @@ def generate_range_report(start_date: str, end_date: str,
     ws1.row_dimensions[1].height = 28
 
     headers = ["#", "Date", "Student ID", "Name", "Department",
-               "Time In", "Time Out", "Status"]
+               "Time In", "Time Out", "Status", "Photo"]
     _apply_header(ws1, 2, headers)
 
     for idx, rec in enumerate(records, start=1):
@@ -198,7 +203,8 @@ def generate_range_report(start_date: str, end_date: str,
         fill = _ALT_FILL if idx % 2 == 0 else PatternFill("solid", fgColor="FFFFFF")
         vals = [idx, rec["date"], rec["student_id"], rec["name"],
                 rec["department"], rec.get("time_in", "—"),
-                rec.get("time_out", "—"), rec.get("status", "Present")]
+            rec.get("time_out", "—"), rec.get("status", "Present"),
+            rec.get("photo_path", "")]
         for c, v in enumerate(vals, 1):
             cell           = ws1.cell(row=row, column=c, value=v)
             cell.font      = _NORM_FONT
@@ -206,13 +212,14 @@ def generate_range_report(start_date: str, end_date: str,
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.fill      = fill
         ws1.cell(row=row, column=8).fill = _status_fill(vals[7])
+        _add_photo(ws1, rec.get("photo_path"), f"I{row}")
 
     _auto_width(ws1)
     ws1.freeze_panes = "A3"
 
     # ── Sheet 2: Per-student summary ──────────────────────────────────────────
     ws2 = wb.create_sheet("Student Summary")
-    ws2.merge_cells("A1:F1")
+    ws2.merge_cells("A1:G1")
     ws2["A1"].value     = "Student Attendance Summary"
     ws2["A1"].font      = Font(bold=True, size=13, color="FFFFFF", name="Calibri")
     ws2["A1"].fill      = _HDR_FILL
@@ -220,7 +227,7 @@ def generate_range_report(start_date: str, end_date: str,
     ws2.row_dimensions[1].height = 28
 
     s_headers = ["Student ID", "Name", "Department", "Days Present",
-                 "Days Absent", "Attendance %"]
+                 "Days Absent", "Attendance %", "Photo"]
     _apply_header(ws2, 2, s_headers)
 
     all_dates = set()
@@ -243,8 +250,13 @@ def generate_range_report(start_date: str, end_date: str,
         row     = idx + 2
         fill    = _ALT_FILL if idx % 2 == 0 else PatternFill("solid", fgColor="FFFFFF")
 
+        student_photo = next(
+            (record.get("photo_path") for record in records
+             if record["student_id"] == sid and record.get("photo_path")),
+            "",
+        )
         for c, v in enumerate([sid, student["name"], student["department"],
-                                present, absent, f"{pct:.1f}%"], 1):
+                                present, absent, f"{pct:.1f}%", student_photo], 1):
             cell           = ws2.cell(row=row, column=c, value=v)
             cell.font      = _NORM_FONT
             cell.border    = _THIN_BORDER
@@ -255,6 +267,7 @@ def generate_range_report(start_date: str, end_date: str,
         pct_cell      = ws2.cell(row=row, column=6)
         pct_cell.fill = _GREEN_FILL if pct >= 75 else (_YELLOW_FILL if pct >= 50
                                                         else _RED_FILL)
+        _add_photo(ws2, student_photo, f"G{row}")
 
     _auto_width(ws2)
     ws2.freeze_panes = "A3"
@@ -283,7 +296,7 @@ def generate_student_report(student_id: str) -> str:
     ws.title = "Student Report"
 
     # Header
-    ws.merge_cells("A1:F1")
+    ws.merge_cells("A1:G1")
     ws["A1"].value     = f"Attendance Report — {student['name']} ({student_id})"
     ws["A1"].font      = Font(bold=True, size=13, color="FFFFFF", name="Calibri")
     ws["A1"].fill      = _HDR_FILL
@@ -297,15 +310,15 @@ def generate_student_report(student_id: str) -> str:
     ws["A2"].font      = Font(italic=True, size=9, name="Calibri")
     ws["A2"].alignment = Alignment(horizontal="center")
 
-    headers = ["#", "Date", "Time In", "Time Out", "Method", "Status"]
+    headers = ["#", "Date", "Time In", "Time Out", "Method", "Status", "Photo"]
     _apply_header(ws, 3, headers)
 
     for idx, rec in enumerate(records, start=1):
         row  = idx + 3
         fill = _ALT_FILL if idx % 2 == 0 else PatternFill("solid", fgColor="FFFFFF")
         vals = [idx, rec["date"], rec.get("time_in", "—"),
-                rec.get("time_out", "—"), rec.get("method", "—"),
-                rec.get("status", "Present")]
+            rec.get("time_out", "—"), rec.get("method", "—"),
+            rec.get("status", "Present"), rec.get("photo_path", "")]
         for c, v in enumerate(vals, 1):
             cell           = ws.cell(row=row, column=c, value=v)
             cell.font      = _NORM_FONT
@@ -313,6 +326,7 @@ def generate_student_report(student_id: str) -> str:
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.fill      = fill
         ws.cell(row=row, column=6).fill = _status_fill(vals[5])
+        _add_photo(ws, rec.get("photo_path"), f"G{row}")
 
     _auto_width(ws)
     ws.freeze_panes = "A4"

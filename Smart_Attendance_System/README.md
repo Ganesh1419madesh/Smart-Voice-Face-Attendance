@@ -87,6 +87,20 @@ python main.py
 
 Open `http://localhost:5000` after startup. Default login: **admin / admin123**
 
+### Use the camera from a phone on Wi-Fi
+
+Mobile browsers require HTTPS before they allow website camera access. For a trusted local HTTPS certificate, install [mkcert](https://github.com/FiloSottile/mkcert) on the computer running the app, then run PowerShell from the workspace root:
+
+```powershell
+mkcert -install
+mkcert -cert-file lan-cert.pem -key-file lan-key.pem localhost 127.0.0.1 192.168.43.139
+$env:ATTENDANCE_TLS_CERT = (Resolve-Path .\lan-cert.pem).Path
+$env:ATTENDANCE_TLS_KEY = (Resolve-Path .\lan-key.pem).Path
+python .\main.py
+```
+
+Replace `192.168.43.139` with the computer's current Wi-Fi IPv4 address. Install and trust mkcert's `rootCA.pem` on the phone (find its folder with `mkcert -CAROOT`), then open `https://192.168.43.139:5000` on the same Wi-Fi network and allow camera access. Keep the certificate and private key on the computer; only the root CA certificate should be installed on the phone. Without both TLS environment variables, the launcher continues to use HTTP.
+
 ---
 
 ## Usage Workflow
